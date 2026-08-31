@@ -30,12 +30,12 @@ function handle(event, input, meta, state, ctx)
 end
 ```
 
-`DateTimeValue <` and `DateTimeValue <=` accept canonical local-time strings in
-`HH:MM` or `HH:MM:SS` form. They compare only the local hour, minute, and
-second, ignoring the date; `DateTimeValue`-to-`DateTimeValue` comparisons keep
-their instant semantics. An unavailable value compares false. Malformed time
-strings produce a contained Lua runtime error.
+`DateTimeValue` ordering against canonical local-time strings in `HH:MM` or
+`HH:MM:SS` form works on either side of the operator. It compares only the
+local hour, minute, and second, ignoring the date;
+`DateTimeValue`-to-`DateTimeValue` comparisons keep their instant semantics. An
+unavailable value compares false. Malformed time strings produce a contained
+Lua runtime error.
 
-For example, a morning condition can use `ctx.now < "06:00"`. The comparison
-syntax is intentionally limited to ordering on the left-hand `DateTimeValue`;
-there is no broad time-construction API.
+For example, a morning condition can use `ctx.now < "06:00"`. There is no
+broad time-construction API.

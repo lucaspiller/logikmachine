@@ -507,8 +507,9 @@ impl SunContext {
 
 /// Lua exposure of [`DateTimeValue`]: civil fields via `__index`, ordering and
 /// equality via the hidden instant. Ordering against a string compares the
-/// local time of day. Unavailable values expose `nil` fields and compare
-/// `false` against everything, including themselves.
+/// local time of day, regardless of which side the string appears on.
+/// Unavailable values expose `nil` fields and compare `false` against
+/// everything, including themselves.
 impl UserData for DateTimeValue {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
         fields.add_field_function_get("year", |_, ud| {
@@ -548,34 +549,46 @@ impl UserData for DateTimeValue {
         methods.add_meta_function("__eq", |_, (left, right): (AnyUserData, AnyUserData)| {
             Ok(compare_datetime_values(&left, &right, |a, b| a == b))
         });
-        methods.add_meta_function("__lt", |_, (left, right): (AnyUserData, LuaValue)| {
-            compare_datetime_value_to_lua(&left, right, |a, b| a < b)
+        methods.add_meta_function("__lt", |_, (left, right): (LuaValue, LuaValue)| {
+            compare_datetime_lua_values(left, right, |a, b| a < b)
         });
-        methods.add_meta_function("__le", |_, (left, right): (AnyUserData, LuaValue)| {
-            compare_datetime_value_to_lua(&left, right, |a, b| a <= b)
+        methods.add_meta_function("__le", |_, (left, right): (LuaValue, LuaValue)| {
+            compare_datetime_lua_values(left, right, |a, b| a <= b)
         });
     }
 }
 
-fn compare_datetime_value_to_lua<F>(
-    left: &AnyUserData,
+fn compare_datetime_lua_values<F>(
+    left: LuaValue,
     right: LuaValue,
     compare: F,
 ) -> mlua::Result<bool>
 where
     F: Fn(i64, i64) -> bool,
 {
-    match right {
-        LuaValue::UserData(right) => Ok(compare_datetime_values(left, &right, compare)),
-        LuaValue::String(right) => {
-            let right = parse_local_time_string(&right)?;
-            let Ok(left) = left.borrow::<DateTimeValue>() else {
+    match (left, right) {
+        (LuaValue::UserData(left), LuaValue::UserData(right)) => {
+            Ok(compare_datetime_values(&left, &right, compare))
+        }
+        (LuaValue::UserData(left), LuaValue::String(right)) => {
+            let Some(left) = left
+                .borrow::<DateTimeValue>()
+                .ok()
+                .and_then(|value| local_seconds(&value))
+            else {
                 return Ok(false);
             };
-            let Some(left) = local_seconds(&left) else {
+            Ok(compare(left, parse_local_time_string(&right)?))
+        }
+        (LuaValue::String(left), LuaValue::UserData(right)) => {
+            let Some(right) = right
+                .borrow::<DateTimeValue>()
+                .ok()
+                .and_then(|value| local_seconds(&value))
+            else {
                 return Ok(false);
             };
-            Ok(compare(left, right))
+            Ok(compare(parse_local_time_string(&left)?, right))
         }
         _ => Ok(false),
     }

@@ -35,6 +35,81 @@
         assert_eq!(runtime.last_accepted_at(), Some(MonotonicMs(1_000)));
     }
 
+    #[test]
+    #[cfg(all(feature = "timezones", feature = "astronomy"))]
+    fn schedule_source_can_compare_solar_values_and_local_time_strings() {
+        let source = r#"
+            function handle(event, input, meta, state, ctx)
+                if event.type ~= "schedule" then
+                    return
+                end
+
+                if (event.schedule == "morning_on" and ctx.sun.sunrise > ctx.now) or (event.schedule == "evening_on" and ctx.sun.sunset < "21:15") then
+                    return { outputs = { facade_lights = true }, state = { matched = true } }
+                elseif event.schedule == "morning_off" or event.schedule == "evening_off" then
+                    return { state = { matched = false } }
+                end
+            end
+        "#;
+        let site = SiteTimeConfig {
+            timezone: TimeZoneId::new("Europe/Vilnius").unwrap(),
+            coordinates: Some(Coordinates {
+                latitude: 54.6872,
+                longitude: 25.2797,
+            }),
+        };
+        let mut engine = Engine::new(EngineConfig::new(
+            vec![Endpoint::output("facade_lights".parse().unwrap(), Dpt::BOOL)],
+            source,
+        ));
+        let trigger = ScheduleTrigger {
+            block_id: id("facade_lighting"),
+            name: sname("morning_on"),
+            kind: ScheduleKind::Fixed,
+            scheduled_for_utc_ms: utc_ms(2026, 8, 31, 3, 0, 0),
+            detected_at_utc_ms: utc_ms(2026, 8, 31, 3, 0, 0),
+            coalesced_count: 0,
+            structural_revision: 1,
+        };
+        let execution = engine
+            .process_schedule_trigger(
+                trigger,
+                &site,
+                Some(utc_ms(2026, 8, 31, 3, 0, 0)),
+                MonotonicMs(1),
+            )
+            .unwrap();
+        assert!(execution.outcome.is_ok(), "{:?}", execution.outcome);
+        assert_eq!(execution.state_after["matched"], StateValue::Bool(true));
+        assert_eq!(
+            execution.outcome.as_ref().unwrap().outputs,
+            vec![OutputEffect::new(
+                "facade_lights".parse().unwrap(),
+                TypedValue::bool(true),
+            )]
+        );
+
+        let evening_trigger = ScheduleTrigger {
+            block_id: id("facade_lighting"),
+            name: sname("evening_on"),
+            kind: ScheduleKind::Astronomical,
+            scheduled_for_utc_ms: utc_ms(2026, 8, 30, 18, 0, 0),
+            detected_at_utc_ms: utc_ms(2026, 8, 30, 18, 0, 0),
+            coalesced_count: 0,
+            structural_revision: 1,
+        };
+        let evening_execution = engine
+            .process_schedule_trigger(
+                evening_trigger,
+                &site,
+                Some(utc_ms(2026, 8, 30, 18, 0, 0)),
+                MonotonicMs(2),
+            )
+            .unwrap();
+        assert!(evening_execution.outcome.is_ok(), "{:?}", evening_execution.outcome);
+        assert_eq!(evening_execution.state_after["matched"], StateValue::Bool(true));
+    }
+
     // --- simulate_schedule ---------------------------------------------------
 
     #[test]
@@ -394,11 +469,25 @@
             r#"
             function handle(event, input, meta, state, ctx)
                 return { state = {
-                    before_hour = ctx.now < "14:00",
-                    before_minute = ctx.now < "13:45",
-                    exact_minute = ctx.now <= "13:45:30",
-                    exact_minute_only = ctx.now <= "13:45",
-                    after_exact_second = ctx.now < "13:45:31",
+                    before_later = ctx.now < "14:00",
+                    before_from_string = "13:00" < ctx.now,
+                    before_equal = ctx.now < "13:45:30",
+                    before_equal_from_string = "13:45:30" < ctx.now,
+                    at_exact = ctx.now <= "13:45:30",
+                    at_exact_from_string = "13:45:30" <= ctx.now,
+                    at_or_before_earlier = ctx.now <= "13:00",
+                    at_or_before_earlier_from_string = "14:00" <= ctx.now,
+                    after_earlier = ctx.now > "13:00",
+                    after_earlier_from_string = "14:00" > ctx.now,
+                    after_later = ctx.now > "14:00",
+                    after_later_from_string = "13:00" > ctx.now,
+                    at_or_after = ctx.now >= "13:45",
+                    at_or_after_from_string = "13:45:30" >= ctx.now,
+                    at_or_after_later = ctx.now >= "14:00",
+                    at_or_after_later_from_string = "13:00" >= ctx.now,
+                    sunrise_after_now = ctx.sun.sunrise > ctx.now,
+                    sunset_before_cutoff = ctx.sun.sunset < "21:15",
+                    sunset_after_cutoff = ctx.sun.sunset > "21:15",
                     sunset_before_midnight = ctx.sun.sunset <= "23:59",
                 }}
             end
@@ -413,33 +502,58 @@
             .unwrap();
         assert!(matches!(execution.outcome, Ok(_)), "{:?}", execution.outcome);
         let state = &execution.state_after;
-        assert_eq!(state["before_hour"], StateValue::Bool(true));
-        assert_eq!(state["before_minute"], StateValue::Bool(false));
-        assert_eq!(state["exact_minute"], StateValue::Bool(true));
-        assert_eq!(state["exact_minute_only"], StateValue::Bool(false));
-        assert_eq!(state["after_exact_second"], StateValue::Bool(true));
+        assert_eq!(state["before_later"], StateValue::Bool(true));
+        assert_eq!(state["before_from_string"], StateValue::Bool(true));
+        assert_eq!(state["before_equal"], StateValue::Bool(false));
+        assert_eq!(state["before_equal_from_string"], StateValue::Bool(false));
+        assert_eq!(state["at_exact"], StateValue::Bool(true));
+        assert_eq!(state["at_exact_from_string"], StateValue::Bool(true));
+        assert_eq!(state["at_or_before_earlier"], StateValue::Bool(false));
+        assert_eq!(state["at_or_before_earlier_from_string"], StateValue::Bool(false));
+        assert_eq!(state["after_earlier"], StateValue::Bool(true));
+        assert_eq!(state["after_earlier_from_string"], StateValue::Bool(true));
+        assert_eq!(state["after_later"], StateValue::Bool(false));
+        assert_eq!(state["after_later_from_string"], StateValue::Bool(false));
+        assert_eq!(state["at_or_after"], StateValue::Bool(true));
+        assert_eq!(state["at_or_after_from_string"], StateValue::Bool(true));
+        assert_eq!(state["at_or_after_later"], StateValue::Bool(false));
+        assert_eq!(state["at_or_after_later_from_string"], StateValue::Bool(false));
+        assert_eq!(state["sunrise_after_now"], StateValue::Bool(false));
+        assert_eq!(state["sunset_before_cutoff"], StateValue::Bool(true));
+        assert_eq!(state["sunset_after_cutoff"], StateValue::Bool(false));
         assert_eq!(state["sunset_before_midnight"], StateValue::Bool(true));
     }
 
     #[test]
     fn malformed_local_time_string_is_a_contained_runtime_error() {
         for value in ["6:00", "24:00", "12:60", "12:00:60", "12:00:00:00"] {
-            let mut engine = ctx_engine(&format!(
-                "function handle(event, input, meta, state, ctx) return {{ state = {{ bad = ctx.now < {value:?} }} }} end"
-            ));
-            let execution = engine
-                .process_input_sampled(
-                    InputEvent::new("wall_switch".parse().unwrap(), TypedValue::bool(true)),
-                    sample(utc_ms(2026, 6, 4, 13, 45, 30)),
-                    &utc_site(),
-                )
-                .unwrap();
-            assert!(matches!(
-                execution.outcome,
-                Err(crate::LogicError::Runtime { ref message, .. })
-                    if message.contains("invalid local time")
-                        && message.contains("canonical HH:MM or HH:MM:SS")
-            ), "{value}: {:?}", execution.outcome);
+            for expression in [
+                format!("ctx.now < {value:?}"),
+                format!("ctx.now <= {value:?}"),
+                format!("ctx.now > {value:?}"),
+                format!("ctx.now >= {value:?}"),
+                format!("{value:?} < ctx.now"),
+                format!("{value:?} <= ctx.now"),
+                format!("{value:?} > ctx.now"),
+                format!("{value:?} >= ctx.now"),
+            ] {
+                let mut engine = ctx_engine(&format!(
+                    "function handle(event, input, meta, state, ctx) return {{ state = {{ bad = {expression} }} }} end"
+                ));
+                let execution = engine
+                    .process_input_sampled(
+                        InputEvent::new("wall_switch".parse().unwrap(), TypedValue::bool(true)),
+                        sample(utc_ms(2026, 6, 4, 13, 45, 30)),
+                        &utc_site(),
+                    )
+                    .unwrap();
+                assert!(matches!(
+                    execution.outcome,
+                    Err(crate::LogicError::Runtime { ref message, .. })
+                        if message.contains("invalid local time")
+                            && message.contains("canonical HH:MM or HH:MM:SS")
+                ), "{expression}: {:?}", execution.outcome);
+            }
         }
     }
 
@@ -452,8 +566,16 @@
                     eq = ctx.now == ctx.sun.dawn,
                     lt = ctx.now < ctx.now,
                     le = ctx.now <= ctx.now,
+                    gt = ctx.now > ctx.now,
+                    ge = ctx.now >= ctx.now,
                     time_lt = ctx.now < "06:00",
                     time_le = ctx.now <= "06:00",
+                    time_gt = ctx.now > "06:00",
+                    time_ge = ctx.now >= "06:00",
+                    string_time_lt = "06:00" < ctx.now,
+                    string_time_le = "06:00" <= ctx.now,
+                    string_time_gt = "06:00" > ctx.now,
+                    string_time_ge = "06:00" >= ctx.now,
                     year_nil = (ctx.now.year == nil),
                     month_nil = (ctx.now.month == nil),
                     weekday_nil = (ctx.now.weekday == nil),
@@ -480,8 +602,16 @@
         assert_eq!(state["eq"], StateValue::Bool(false));
         assert_eq!(state["lt"], StateValue::Bool(false));
         assert_eq!(state["le"], StateValue::Bool(false));
+        assert_eq!(state["gt"], StateValue::Bool(false));
+        assert_eq!(state["ge"], StateValue::Bool(false));
         assert_eq!(state["time_lt"], StateValue::Bool(false));
         assert_eq!(state["time_le"], StateValue::Bool(false));
+        assert_eq!(state["time_gt"], StateValue::Bool(false));
+        assert_eq!(state["time_ge"], StateValue::Bool(false));
+        assert_eq!(state["string_time_lt"], StateValue::Bool(false));
+        assert_eq!(state["string_time_le"], StateValue::Bool(false));
+        assert_eq!(state["string_time_gt"], StateValue::Bool(false));
+        assert_eq!(state["string_time_ge"], StateValue::Bool(false));
         assert_eq!(state["year_nil"], StateValue::Bool(true));
         assert_eq!(state["month_nil"], StateValue::Bool(true));
         assert_eq!(state["weekday_nil"], StateValue::Bool(true));

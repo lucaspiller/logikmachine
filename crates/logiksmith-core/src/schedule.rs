@@ -19,7 +19,8 @@ mod tests {
     use super::*;
     use crate::{
         BlockActivation, BlockConfig, BlockConfigError, Dpt, Endpoint, Engine, EngineConfig,
-        InputEvent, Runtime, RuntimeActivation, RuntimeConfig, StateValue, Trigger, TypedValue,
+        InputEvent, OutputEffect, Runtime, RuntimeActivation, RuntimeConfig, StateValue, Trigger,
+        TypedValue,
     };
     include!("schedule_rule_tests.rs");
     include!("schedule_runtime_tests.rs");
