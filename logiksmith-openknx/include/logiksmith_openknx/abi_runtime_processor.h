@@ -23,13 +23,18 @@ class AbiRuntimeProcessor final : public RuntimeProcessor {
     bool started() const { return _runtime != nullptr; }
 
     void process_input(const InputEvent& event, RawBindingRouter& router) override;
+    void tick(uint32_t now_ms, RawBindingRouter& router) override;
 
   private:
-    static constexpr size_t kEffectCapacity = 8;
+    static constexpr size_t kEffectCapacity = 16;
 
     void stop();
     static bool copy_endpoint(const uint8_t* bytes, uint16_t length, EndpointId& endpoint);
-    static bool is_bool_value(const LogiksmithValue& value);
+    static bool copy_block(const uint8_t* bytes, uint16_t length, EndpointId& block);
+    static bool encode_value(const LogiksmithValue& value,
+                             uint8_t* payload,
+                             uint8_t& payload_size,
+                             DptId& dpt);
 
     LogiksmithRuntime* _runtime = nullptr;
     LogiksmithEffect _effects[kEffectCapacity] = {};

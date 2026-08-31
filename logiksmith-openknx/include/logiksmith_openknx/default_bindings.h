@@ -18,6 +18,7 @@ inline Binding default_binding(const char* endpoint,
                                BindingDirection direction) {
     Binding binding;
     binding.group_address = group_address;
+    binding.block_id.assign("main");
     binding.endpoint.assign(endpoint);
     binding.dpt = dpt;
     binding.direction = direction;

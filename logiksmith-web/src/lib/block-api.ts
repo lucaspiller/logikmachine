@@ -67,7 +67,11 @@ function responseError(status: number, body: unknown, operation: string): BlockA
   let currentStructuralRevision: RevisionToken | null = null;
   try { currentRevision = current === undefined || current === null ? null : token(current, 'current_revision', false); } catch { /* malformed conflict details still surface as a normal API failure */ }
   try { currentStructuralRevision = structural === undefined || structural === null ? null : token(structural, 'current_structural_revision', false); } catch { /* see above */ }
-  const message = isObject(body) && typeof body.error === 'string' ? body.error : status === 409 ? 'The block changed. Refresh the live snapshot before retrying.' : `${operation} request failed (${status})`;
+  const structuredError = isObject(body) && isObject(body.error) && typeof body.error.message === 'string' ? `${typeof body.error.category === 'string' ? `${body.error.category}: ` : ''}${body.error.message}` : null;
+  const message = isObject(body) && typeof body.error === 'string' ? body.error : structuredError ?? (
+    status === 423 ? 'Programming mode is required for this change. Press the device programming button and try again.'
+      : status === 503 ? 'The embedded management service is busy. Retry after a short delay; automation continues running.'
+        : status === 409 ? 'The block changed. Refresh the live snapshot before retrying.' : `${operation} request failed (${status})`);
   return new BlockApiError(status, message, errors(body), currentRevision, currentStructuralRevision);
 }
 

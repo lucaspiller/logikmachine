@@ -19,12 +19,13 @@ const std::string LogicSmithModule::name() {
 }
 
 const std::string LogicSmithModule::version() {
-    return "0.1.0-m14";
+    return "0.1.0-m15";
 }
 
 uint16_t LogicSmithModule::flashSize() {
-    // M14 reserves no OpenKNX flash record yet. Binding persistence is kept as
-    // a checked-in LittleFS scaffold until the M15 web/config store exists.
+    // M15 keeps persistence behind the native-testable store seam. The
+    // concrete LittleFS adapter and reserved-record accounting remain host
+    // integration work, so report no OpenKNX flash record here.
     return 0;
 }
 
@@ -69,6 +70,11 @@ void LogicSmithModule::loop() {
         _processor->tick(millis(), _router);
     }
     (void)_router.drain_outputs(_sender, 4);
+    // Management is deliberately the final bounded slice. KNX ingress, due
+    // timers, and output draining retain priority on every pass.
+    if (_management_server != nullptr) {
+        (void)_management_server->process_one();
+    }
 }
 
 void LogicSmithModule::on_raw_group(void* context,

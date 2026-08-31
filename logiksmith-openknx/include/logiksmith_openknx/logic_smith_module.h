@@ -3,6 +3,7 @@
 #include "OpenKNX/Module.h"
 
 #include "logiksmith_openknx/abi_runtime_processor.h"
+#include "logiksmith_openknx/management_server.h"
 #include "logiksmith_openknx/raw_binding_router.h"
 #include "logiksmith_openknx/raw_transport.h"
 #include "logiksmith_openknx/runtime_processor.h"
@@ -44,6 +45,7 @@ class LogicSmithModule final : public OpenKNX::Module {
         return _processor == &_abi_processor && _abi_processor.started();
     }
     bool runtime_start_failed() const { return _runtime_start_failed; }
+    void set_management_server(ManagementServer* server) { _management_server = server; }
 
   private:
     static void on_raw_group(void* context,
@@ -62,6 +64,7 @@ class LogicSmithModule final : public OpenKNX::Module {
     AbiRuntimeProcessor _abi_processor;
     DisabledRuntimeProcessor _disabled_processor;
     RuntimeProcessor* _processor = &_disabled_processor;
+    ManagementServer* _management_server = nullptr;
     bool _raw_hook_registered = false;
     bool _runtime_start_failed = false;
 };

@@ -19,6 +19,17 @@ REQUIRED_SYMBOLS = (
     "logiksmith_runtime_create",
     "logiksmith_runtime_destroy",
     "logiksmith_runtime_process_input",
+    "logiksmith_runtime_create_from_document",
+    "logiksmith_runtime_create_from_toml",
+    "logiksmith_runtime_process_due_timer",
+    "logiksmith_runtime_validate_source",
+    "logiksmith_runtime_simulate_input",
+    "logiksmith_runtime_simulate_timer",
+    "logiksmith_runtime_activate",
+    "logiksmith_runtime_set_enabled",
+    "logiksmith_runtime_resume",
+    "logiksmith_runtime_project",
+    "logiksmith_runtime_project_block",
 )
 
 

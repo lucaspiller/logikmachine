@@ -1,6 +1,11 @@
 import type { DashboardAction, DashboardEvent, DashboardState, DisplaySnapshot, StreamStatus } from './dashboard-types';
+import type { RevisionToken } from './revision';
 
 export const initialDashboardState: DashboardState = { snapshot: null, revision: 0, streamStatus: 'connecting', stale: true, staleAtMs: null, error: null, needsResync: false, nowMs: 0, selectedBlockId: null, selectedExecutionId: null, selectionPinned: false, selectionNotice: null };
+function compareRevision(left: RevisionToken, right: RevisionToken): number {
+  const a = BigInt(String(left)); const b = BigInt(String(right));
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 function staleState(state: DashboardState, error: string | null = state.error): DashboardState { return { ...state, streamStatus: 'stale', stale: true, staleAtMs: state.staleAtMs ?? state.nowMs, error }; }
 function reconcileSelection(state: DashboardState, snapshot: DisplaySnapshot): Pick<DashboardState, 'selectedExecutionId' | 'selectionPinned' | 'selectionNotice'> {
   const block = snapshot.blocks.find((item) => item.id === state.selectedBlockId) ?? snapshot.blocks[0];
@@ -19,8 +24,11 @@ export function reduceDashboardState(state: DashboardState, action: DashboardAct
     case 'event_received': {
       if (action.event.kind === 'resync') return { ...staleState(state), needsResync: true };
       const event = action.event;
-      if (event.revision <= state.revision) return state;
-      if (event.revision !== state.revision + 1) return { ...staleState(state, 'The event stream skipped a revision.'), needsResync: true };
+      if (compareRevision(event.revision, state.revision) <= 0) return state;
+      // Polling returns the latest cursor and deliberately coalesces revisions;
+      // an SSE event, when explicitly enabled for legacy desktop tests, still
+      // requires contiguous delivery.
+      if (event.source !== 'poll' && (typeof event.revision !== 'number' || typeof state.revision !== 'number' || event.revision !== state.revision + 1)) return { ...staleState(state, 'The event stream skipped a revision.'), needsResync: true };
       const selectedBlockId = event.snapshot.blocks.some((item) => item.id === state.selectedBlockId) ? state.selectedBlockId : event.snapshot.blocks[0]?.id ?? null; const next = { ...state, snapshot: event.snapshot, revision: event.revision, error: null, needsResync: false, streamStatus: 'connected' as StreamStatus, stale: false, staleAtMs: null, selectedBlockId }; return { ...next, ...reconcileSelection(next, event.snapshot) };
     }
     case 'select_execution': {

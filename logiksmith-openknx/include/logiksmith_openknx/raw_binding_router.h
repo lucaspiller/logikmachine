@@ -26,6 +26,7 @@ struct DptId {
     bool operator==(const DptId& other) const {
         return main == other.main && subtype == other.subtype;
     }
+    bool operator!=(const DptId& other) const { return !(*this == other); }
 };
 
 constexpr DptId kDptBool{1, 1};
@@ -81,6 +82,10 @@ enum class BindingDirection : uint8_t { Input, Output };
 
 struct Binding {
     uint16_t group_address = 0;
+    // Block identity is part of the logical route. The default keeps M14
+    // callers source-compatible while allowing repeated endpoint names in
+    // different blocks.
+    EndpointId block_id;
     EndpointId endpoint;
     DptId dpt;
     BindingDirection direction = BindingDirection::Input;
@@ -95,6 +100,7 @@ struct RawGroupTelegram {
 };
 
 struct InputEvent {
+    EndpointId block_id;
     EndpointId endpoint;
     DptId dpt;
     uint16_t source_address = 0;
@@ -105,6 +111,26 @@ struct InputEvent {
 
     // DPT 1 encodes the value in the low bit of the first value octet.
     bool bool_value() const { return payload_size == 1 && (payload[0] & 0x01U) != 0; }
+
+    uint8_t percent_value() const {
+        return payload_size == 1
+                   ? static_cast<uint8_t>((static_cast<uint16_t>(payload[0]) * 100U + 127U) /
+                                          255U)
+                   : 0;
+    }
+
+    int32_t temperature_centi_degrees() const {
+        if (payload_size != 2) {
+            return 0;
+        }
+        const uint16_t raw = static_cast<uint16_t>(payload[0] << 8U) | payload[1];
+        int32_t mantissa = static_cast<int32_t>(raw & 0x07FFU);
+        if ((raw & 0x8000U) != 0) {
+            mantissa -= 0x0800;
+        }
+        const uint8_t exponent = static_cast<uint8_t>((raw >> 11U) & 0x0FU);
+        return mantissa * (1 << exponent);
+    }
 };
 
 struct OutputEffect {
@@ -183,8 +209,12 @@ class BindingTable {
     BindingTableError replace(const Binding* bindings, size_t count);
 
     size_t size() const { return _size; }
+    const Binding* at(size_t index) const { return index < _size ? &_bindings[index] : nullptr; }
     const Binding* find_input(uint16_t group_address) const;
     const Binding* find_output(const EndpointId& endpoint, DptId dpt) const;
+    const Binding* find_output(const EndpointId& block_id,
+                               const EndpointId& endpoint,
+                               DptId dpt) const;
 
   private:
     static bool valid_dpt(DptId dpt);
@@ -229,7 +259,15 @@ class RawBindingRouter {
                                 DptId dpt,
                                 const uint8_t* payload,
                                 uint8_t payload_size);
+    OutputResult enqueue_output(const EndpointId& block_id,
+                                const EndpointId& endpoint,
+                                DptId dpt,
+                                const uint8_t* payload,
+                                uint8_t payload_size);
     OutputResult enqueue_bool_output(const EndpointId& endpoint, bool value);
+    OutputResult enqueue_bool_output(const EndpointId& block_id,
+                                     const EndpointId& endpoint,
+                                     bool value);
 
     bool pop_input(InputEvent& event) { return _inputs.pop(event); }
     size_t drain_outputs(RawGroupSender& sender, size_t limit = kOutputQueueCapacity);

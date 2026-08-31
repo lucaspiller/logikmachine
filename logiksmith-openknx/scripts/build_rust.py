@@ -120,6 +120,17 @@ required_symbols = (
     "logiksmith_runtime_create",
     "logiksmith_runtime_destroy",
     "logiksmith_runtime_process_input",
+    "logiksmith_runtime_create_from_document",
+    "logiksmith_runtime_create_from_toml",
+    "logiksmith_runtime_process_due_timer",
+    "logiksmith_runtime_validate_source",
+    "logiksmith_runtime_simulate_input",
+    "logiksmith_runtime_simulate_timer",
+    "logiksmith_runtime_activate",
+    "logiksmith_runtime_set_enabled",
+    "logiksmith_runtime_resume",
+    "logiksmith_runtime_project",
+    "logiksmith_runtime_project_block",
 )
 missing = [symbol for symbol in required_symbols if symbol not in symbols]
 if missing:
@@ -127,12 +138,18 @@ if missing:
         "embedded ABI archive is missing required symbols: " + ", ".join(missing)
     )
 
-# LIBS is deliberately paired with strong ABI declarations in release C++.
-# Thus the archive is extracted by the linker instead of being discarded as a
-# library referenced only through weak symbols in native test builds.
+# Keep every bounded ABI entry point in the release image. Most operations are
+# reached by the future HTTP/configuration adapter rather than the hot KNX
+# path, so ordinary archive extraction would discard them and make the symbol
+# guard report a false failure. Whole-archive is scoped to this one Rust
+# archive, then normal linker extraction resumes for the rest of the image.
 env.Append(
-    LIBPATH=[str(archive_dir)],
-    LIBS=["logiksmith_embedded_abi"],
+    LINKFLAGS=[
+        "-Wl,--whole-archive",
+        str(archive),
+        "-Wl,--no-whole-archive",
+        *[f"-Wl,--undefined={symbol}" for symbol in required_symbols],
+    ],
 )
 print("LogikSmith Rust ABI: linked " + str(archive))
 print("LogikSmith target Lua: compiled by the embedded mlua source patch")

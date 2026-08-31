@@ -7,10 +7,10 @@ edition = "2024"
 # The desktop release is the complete service. Embedded hosts can opt into
 # just the capabilities they actually provide.
 default = ["timezones", "astronomy", "http-inputs", "webhook-inputs", "vendored-lua"]
-timezones = ["logiksmith-core/timezones"]
-astronomy = ["logiksmith-core/astronomy"]
-http-inputs = ["dep:reqwest", "logiksmith-core/http-inputs"]
-webhook-inputs = ["logiksmith-core/webhook-inputs"]
+timezones = ["logiksmith-core/timezones", "logiksmith-runtime-api/timezones"]
+astronomy = ["logiksmith-core/astronomy", "logiksmith-runtime-api/astronomy"]
+http-inputs = ["dep:reqwest", "logiksmith-core/http-inputs", "logiksmith-runtime-api/http-inputs"]
+webhook-inputs = ["logiksmith-core/webhook-inputs", "logiksmith-runtime-api/webhook-inputs"]
 vendored-lua = ["logiksmith-core/vendored-lua"]
 external-inputs = ["http-inputs", "webhook-inputs"]
 
@@ -20,6 +20,7 @@ clap = { version = "4.5", features = ["derive"] }
 futures-util = "0.3"
 jiff = { version = "0.2", default-features = false, features = ["std"] }
 logiksmith-core = { path = "../logiksmith-core", default-features = false }
+logiksmith-runtime-api = { path = "../logiksmith-runtime-api", default-features = false }
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["rustls-tls-native-roots", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -20,6 +20,11 @@ pub use host_limits::*;
 pub use protocol::*;
 pub use simulation::*;
 
+/// Shared transport-free document and runtime operations. The legacy desktop
+/// modules remain exported for the current HTTP surface; new adapters should
+/// use this module so desktop and embedded cannot grow separate semantics.
+pub use logiksmith_runtime_api as runtime_api;
+
 pub(crate) mod wire_revision {
     use serde::{Deserialize, Deserializer, Serializer, de::Error};
 

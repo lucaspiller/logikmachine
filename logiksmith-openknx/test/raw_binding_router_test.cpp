@@ -155,6 +155,63 @@ void runtime_seam_carries_input_to_output() {
     assert(sender.bytes[0] == 1);
 }
 
+void one_group_can_fan_out_to_multiple_blocks_when_dpt_matches() {
+    Binding bindings[3] = {binding("first", 0x0101, BindingDirection::Input),
+                           binding("second", 0x0101, BindingDirection::Input),
+                           binding("light", 0x0102, BindingDirection::Output)};
+    assert(bindings[0].block_id.assign("alpha"));
+    assert(bindings[1].block_id.assign("beta"));
+    BindingTable table;
+    assert(table.replace(bindings, 3) == BindingTableError::None);
+    RawBindingRouter router(table);
+    assert(router.ingest(telegram(0x0101, 1)) == IngressResult::Enqueued);
+    InputEvent first;
+    InputEvent second;
+    assert(router.pop_input(first));
+    assert(router.pop_input(second));
+    assert(first.block_id != second.block_id);
+    assert(first.endpoint != second.endpoint);
+}
+
+void block_scoped_output_lookup_keeps_local_endpoint_names_isolated() {
+    Binding bindings[2] = {binding("light", 0x0102, BindingDirection::Output),
+                           binding("light", 0x0202, BindingDirection::Output)};
+    assert(bindings[0].block_id.assign("alpha"));
+    assert(bindings[1].block_id.assign("beta"));
+    BindingTable table;
+    assert(table.replace(bindings, 2) == BindingTableError::None);
+    RawBindingRouter router(table);
+    EndpointId alpha;
+    EndpointId beta;
+    EndpointId light;
+    assert(alpha.assign("alpha"));
+    assert(beta.assign("beta"));
+    assert(light.assign("light"));
+    assert(router.enqueue_bool_output(alpha, light, true) == OutputResult::Enqueued);
+    assert(router.enqueue_bool_output(beta, light, false) == OutputResult::Enqueued);
+    RecordingSender sender;
+    assert(router.drain_outputs(sender, 1) == 1);
+    assert(sender.destination == 0x0102);
+    assert(router.drain_outputs(sender, 1) == 1);
+    assert(sender.destination == 0x0202);
+}
+
+void supported_dpts_decode_knx_payloads() {
+    InputEvent percent;
+    percent.dpt = kDptPercent;
+    percent.payload[0] = 128;
+    percent.payload_size = 1;
+    assert(percent.percent_value() == 50);
+
+    InputEvent temperature;
+    temperature.dpt = kDptTemperature;
+    // DPT 9: -5.00 °C, exponent 0, 11-bit two's-complement mantissa -500.
+    temperature.payload[0] = 0x86;
+    temperature.payload[1] = 0x0c;
+    temperature.payload_size = 2;
+    assert(temperature.temperature_centi_degrees() == -500);
+}
+
 } // namespace
 
 int main() {
@@ -163,5 +220,8 @@ int main() {
     replacing_bindings_changes_routing_without_ets();
     queues_are_bounded_and_non_blocking();
     runtime_seam_carries_input_to_output();
+    one_group_can_fan_out_to_multiple_blocks_when_dpt_matches();
+    block_scoped_output_lookup_keeps_local_endpoint_names_isolated();
+    supported_dpts_decode_knx_payloads();
     return 0;
 }

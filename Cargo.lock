@@ -806,6 +806,7 @@ dependencies = [
  "futures-util",
  "jiff",
  "logiksmith-core",
+ "logiksmith-runtime-api",
  "reqwest",
  "serde",
  "serde_json",
@@ -822,6 +823,18 @@ name = "logiksmith-embedded-abi"
 version = "0.1.0"
 dependencies = [
  "logiksmith-core",
+ "logiksmith-runtime-api",
+]
+
+[[package]]
+name = "logiksmith-runtime-api"
+version = "0.1.0"
+dependencies = [
+ "logiksmith-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "toml",
 ]
 
 [[package]]

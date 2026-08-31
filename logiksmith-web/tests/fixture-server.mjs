@@ -417,6 +417,12 @@ function documentDpt(value) {
 }
 function sendJson(response, value, status = 200) { response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(value)); }
 const server = createServer(async (request, response) => {
+  if (request.url?.startsWith('/api/meta')) return sendJson(response, { host_kind: 'desktop', revision: '4', capabilities: { schedules: true, external_inputs: true, http_inputs: true, webhook_inputs: true }, programming_mode: true, mutation_locked: false, runtime: { status: 'ready' }, storage: { status: 'ready' }, overloaded: false });
+  if (request.url?.startsWith('/api/changes')) {
+    const since = new URL(request.url, 'http://fixture').searchParams.get('since');
+    if (since === '4') { response.writeHead(204); return response.end(); }
+    return sendJson(response, { revision: '4', changed_blocks: [], executions: [], telegrams_changed: false, logs_changed: false, cursors: {} });
+  }
   if (request.url?.startsWith('/api/snapshot')) return sendJson(response, snapshot());
   if (request.url?.startsWith('/api/automation')) {
     if (request.method === 'PUT') { for await (const _chunk of request) {} return sendJson(response, { revision: 13, logic_activated: true, active_logic_revision: 13, restart_required: false, cancelled_timers: ['dim', 'off'] }); }

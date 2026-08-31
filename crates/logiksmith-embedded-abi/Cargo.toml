@@ -16,3 +16,4 @@ embedded-lua = ["logiksmith-core/vendored-lua"]
 # the `embedded-lua` feature; the desktop default keeps the normal developer
 # workflow unchanged.
 logiksmith-core = { path = "../logiksmith-core", default-features = false }
+logiksmith-runtime-api = { path = "../logiksmith-runtime-api", default-features = false }

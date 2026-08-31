@@ -1,0 +1,18 @@
+[package]
+name = "logiksmith-runtime-api"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["timezones", "astronomy", "http-inputs", "webhook-inputs"]
+timezones = ["logiksmith-core/timezones"]
+astronomy = ["logiksmith-core/astronomy"]
+http-inputs = []
+webhook-inputs = []
+
+[dependencies]
+logiksmith-core = { path = "../logiksmith-core", default-features = false, features = ["vendored-lua"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+toml = "0.8"

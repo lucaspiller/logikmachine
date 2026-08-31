@@ -4,15 +4,14 @@ import type {
   DisplayBlock, DisplayBlockSchedule, DisplayCausalLink, DisplayDateTimeValue, DisplayLastResult, DisplayLogicError, DisplayLog, DisplayPendingTimer, DisplayScheduleExecutionTrigger, DisplayScheduleKind, DisplayScheduleOccurrence, DisplaySchedulePreview, DisplaySignal, DisplaySignalBinding, DisplaySignalChange, DisplaySignalConsumer, DisplaySignalEffect, DisplaySignalProducer, DisplaySimulation, DisplaySiteTime, DisplaySnapshot, DisplayState,
   DisplayStateValue, DisplaySunContext, DisplayTelegram, DisplayTimeContext, DisplayTimer, DisplayTimerEffect, DisplayTimerEffectAction,
   DisplayTransition, DisplayTimerExecutionTrigger, DisplayWrite, DisplayOperations, DisplayOperationsBlockHealth, SimulationScenario, SimulationTypedValue,
-  TimerState, WriteStatus, DisplayExecutionOrigin, DisplayExternalConsumer, DisplayExternalHealth, DisplayExternalInputs, DisplayExternalValue, DisplayHttpPoll, DisplayWebhookInput
+  TimerState, WriteStatus, DisplayExecutionOrigin, DisplayExternalConsumer, DisplayExternalHealth, DisplayExternalInputs, DisplayExternalValue, DisplayHttpPoll, DisplayWebhookInput,
+  DisplayChanges, DisplayCapabilities, DisplayHostKind, DisplayHostMeta
 } from './state';
 import { encodeRevisionToken, parseRevisionToken, type RevisionToken } from './revision';
 
 type JsonObject = Record<string, unknown>;
 type JsonPrimitive = string | number | boolean | null;
 type FetchLike = typeof fetch;
-type EventSourceLike = { onopen: (() => void) | null; onerror: (() => void) | null; addEventListener(type: string, listener: (event: MessageEvent<string>) => void): void; close(): void; };
-type EventSourceConstructor = new (url: string) => EventSourceLike;
 
 export class ApiDecodeError extends Error { constructor(path: string, message: string) { super(`Malformed dashboard data at ${path}: ${message}`); this.name = 'ApiDecodeError'; } }
 export interface SimulationFieldError { path: string; message: string; }
@@ -55,7 +54,8 @@ function nullableBoolean(value: unknown, path: string): boolean | null { if (val
 function array(value: unknown, path: string): unknown[] { if (!Array.isArray(value)) throw new ApiDecodeError(path, 'expected an array'); return value; }
 function logicRevision(value: unknown, path: string): RevisionToken { const token = parseRevisionToken(value); if (token === null) throw new ApiDecodeError(path, 'expected a non-negative decimal logic revision token'); return token; }
 function optionalLogicRevision(value: unknown, path: string): RevisionToken | null { return value === undefined || value === null ? null : logicRevision(value, path); }
-function optionalRevision(value: unknown, path: string): number | null { return value === undefined || value === null ? null : revision(value, path); }
+function optionalRevision(value: unknown, path: string): RevisionToken | null { return value === undefined || value === null ? null : logicRevision(value, path); }
+function snapshotRevision(value: unknown, path: string): RevisionToken { const token = parseRevisionToken(value); if (token === null) throw new ApiDecodeError(path, 'expected a non-negative decimal revision token'); return token; }
 function timeValue(value: unknown, path: string): string { return typeof value === 'string' ? stringValue(value, path) : `${nonNegativeNumber(value, path)} ms`; }
 
 function dpt(value: unknown, path: string): string {
@@ -642,7 +642,7 @@ function decodeMultiSnapshot(root: JsonObject, blocks: DisplayBlock[], receivedA
   const capturedRaw = field(root, 'snapshot', 'captured_at_ms', 'capturedAtMs') ?? readLogic(['captured_at_ms', 'capturedAtMs']); const capturedAtMs = capturedRaw === undefined || capturedRaw === null ? receivedAtMs : nonNegativeNumber(capturedRaw, 'captured_at_ms'); const clockOffsetMs = capturedRaw === undefined || capturedRaw === null || Math.abs(receivedAtMs - capturedAtMs) <= 86_400_000 ? 0 : receivedAtMs - capturedAtMs; const pendingTimers = blocks.flatMap((item) => item.pendingTimers); const executions = blocks.flatMap((item) => item.executions).sort((a, b) => b.executionId - a.executionId); const inputValue = firstInput?.observed ?? null; const outputValue = firstOutput?.observed ?? null; const requested = firstOutput?.requested ?? null; const firstAutomation = first ? { inputs: first.inputs, outputs: first.outputs, bindings: first.bindings, signalBindings: first.signalBindings, source: first.source } : undefined;
   const siteTimeRaw = field(root, 'snapshot', 'site_time', 'siteTime'); const siteTimeValue = siteTimeRaw === undefined || siteTimeRaw === null ? null : siteTime(siteTimeRaw, 'site_time'); const signalsRaw = field(root, 'snapshot', 'signals') ?? readLogic(['signals']); const signals = signalsRaw === undefined || signalsRaw === null ? [] : array(signalsRaw, 'signals').map(signal); const external = externalInputs(root);
   const configInput = field(config, 'input'); const configOutput = field(config, 'output'); const inputEndpoint = configInput === undefined ? { address: firstInput?.address ?? '', dpt: firstInput?.dpt ?? '1.001' } : endpoint(configInput, 'config.input'); const outputEndpoint = configOutput === undefined ? { address: firstOutput?.address ?? '', dpt: firstOutput?.dpt ?? '1.001' } : endpoint(configOutput, 'config.output'); const offDelayRaw = field(config, 'off_delay_ms', 'offDelayMs', 'off_delay');
-  const revisionRaw = required(field(root, 'snapshot', 'revision'), 'revision'); return { revision: revision(revisionRaw, 'revision'), connection: connection(connectionValue), config: { input: inputEndpoint, output: outputEndpoint, offDelayMs: offDelayRaw === undefined || offDelayRaw === null ? 0 : nonNegativeNumber(offDelayRaw, 'config.off_delay_ms') }, values: { input: { observed: inputValue }, output: { observed: outputValue, requested } }, automation: firstAutomation, activeAutomationRevision: optionalRevision(field(root, 'snapshot', 'active_automation_revision', 'activeAutomationRevision'), 'active_automation_revision'), savedAutomationRevision: optionalRevision(field(root, 'snapshot', 'saved_automation_revision', 'savedAutomationRevision'), 'saved_automation_revision'), activeStructuralRevision, savedStructuralRevision, activeLogicRevision, savedLogicRevision, restartRequired, capturedAtMs, clockOffsetMs, state: first?.state ?? {}, pendingTimers, executions, signals, externalInputs: external, siteTime: siteTimeValue, receivedAtMs, write: write(field(root, 'snapshot', 'write') ?? field(root, 'snapshot', 'last_write')), timer: { state: pendingTimers.length ? 'pending' : 'idle', deadlineMs: pendingTimers[0]?.dueAtMs ?? null, remainingMs: null, sampledAtMs: capturedAtMs }, telegrams, logs, blocks, operations: operationsSnapshot(root) };
+  const revisionRaw = required(field(root, 'snapshot', 'revision'), 'revision'); return { revision: snapshotRevision(revisionRaw, 'revision'), connection: connection(connectionValue), config: { input: inputEndpoint, output: outputEndpoint, offDelayMs: offDelayRaw === undefined || offDelayRaw === null ? 0 : nonNegativeNumber(offDelayRaw, 'config.off_delay_ms') }, values: { input: { observed: inputValue }, output: { observed: outputValue, requested } }, automation: firstAutomation, activeAutomationRevision: optionalRevision(field(root, 'snapshot', 'active_automation_revision', 'activeAutomationRevision'), 'active_automation_revision'), savedAutomationRevision: optionalRevision(field(root, 'snapshot', 'saved_automation_revision', 'savedAutomationRevision'), 'saved_automation_revision'), activeStructuralRevision, savedStructuralRevision, activeLogicRevision, savedLogicRevision, restartRequired, capturedAtMs, clockOffsetMs, state: first?.state ?? {}, pendingTimers, executions, signals, externalInputs: external, siteTime: siteTimeValue, receivedAtMs, write: write(field(root, 'snapshot', 'write') ?? field(root, 'snapshot', 'last_write')), timer: { state: pendingTimers.length ? 'pending' : 'idle', deadlineMs: pendingTimers[0]?.dueAtMs ?? null, remainingMs: null, sampledAtMs: capturedAtMs }, telegrams, logs, blocks, operations: operationsSnapshot(root) };
 }
 
 export function decodeSnapshot(input: unknown, receivedAtMs = Date.now()): DisplaySnapshot {
@@ -694,7 +694,7 @@ export function decodeSnapshot(input: unknown, receivedAtMs = Date.now()): Displ
   const stateRaw = field(root, 'snapshot', 'state') ?? readLogic(['state', 'transient_state', 'transientState']);
   const siteTimeRaw = field(root, 'snapshot', 'site_time', 'siteTime'); const siteTimeValue = siteTimeRaw === undefined || siteTimeRaw === null ? null : siteTime(siteTimeRaw, 'site_time'); const signalsRaw = field(root, 'snapshot', 'signals') ?? readLogic(['signals']); const signals = signalsRaw === undefined || signalsRaw === null ? [] : array(signalsRaw, 'signals').map(signal); const external = externalInputs(root);
   return {
-    revision: revision(required(field(root, 'snapshot', 'revision'), 'revision'), 'revision'),
+    revision: snapshotRevision(required(field(root, 'snapshot', 'revision'), 'revision'), 'revision'),
     connection: connection(required(field(root, 'snapshot', 'connection'), 'connection')),
     config: { input: inputEndpoint, output: outputEndpoint, offDelayMs: offDelayRaw === undefined || offDelayRaw === null ? 0 : nonNegativeNumber(offDelayRaw, 'config.off_delay_ms') },
     values: { input: { observed: inputObserved }, output: { observed: outputObserved, requested: outputRequested } },
@@ -708,7 +708,7 @@ function parseJson(value: string, path: string): unknown { try { return JSON.par
 export function decodeEvent(input: unknown, eventName = 'update', eventId?: string): DashboardEvent { const root = object(typeof input === 'string' ? parseJson(input, 'event.data') : input, 'event'); const eventRevision = revision(required(field(root, 'event', 'revision') ?? eventId, 'event.revision'), 'event.revision'); if (eventName === 'resync') return { kind: 'resync', revision: eventRevision }; if (eventName !== 'update') throw new ApiDecodeError('event', `unsupported event ${eventName}`); const snapshot = decodeSnapshot(required(field(root, 'event', 'snapshot'), 'event.snapshot')); if (snapshot.revision !== eventRevision) throw new ApiDecodeError('event.revision', 'does not match event.snapshot.revision'); return { kind: 'update', revision: eventRevision, snapshot }; }
 function jsonOrNull(response: Response): Promise<unknown> { return response.json().catch(() => null); }
 function simulationFieldErrors(value: unknown): SimulationFieldError[] { if (!isObject(value)) return []; const raw = value.errors ?? value.field_errors ?? value.fields; if (Array.isArray(raw)) return raw.flatMap((item) => isObject(item) && (typeof item.path === 'string' || typeof item.field === 'string') && typeof item.message === 'string' ? [{ path: (item.path ?? item.field) as string, message: item.message }] : []); if (isObject(raw)) return Object.entries(raw).flatMap(([path, message]) => typeof message === 'string' ? [{ path, message }] : []); return []; }
-function simulationErrorMessage(status: number, body: unknown, blockScoped = false): string { if (status === 404) return 'The selected logic block no longer exists. Refresh the dashboard.'; if (status === 409) return blockScoped ? 'The selected block source changed. Refresh the dashboard and re-run the simulation.' : 'The active logic source changed. Refresh the dashboard and re-run the simulation.'; if (status === 422) return 'The simulation scenario is invalid. Fix the highlighted fields and re-run.'; if (isObject(body) && typeof body.error === 'string') return body.error; return `Simulation request failed (${status})`; }
+function simulationErrorMessage(status: number, body: unknown, blockScoped = false): string { if (status === 404) return 'The selected logic block no longer exists. Refresh the dashboard.'; if (status === 409) return blockScoped ? 'The selected block source changed. Refresh the dashboard and re-run the simulation.' : 'The active logic source changed. Refresh the dashboard and re-run the simulation.'; if (status === 423) return 'Programming mode is required for this operation. Press the device programming button and try again.'; if (status === 503) return 'The embedded management service is busy. Retry after a short delay; automation continues running.'; if (status === 422) return 'The simulation scenario is invalid. Fix the highlighted fields and re-run.'; if (isObject(body) && typeof body.error === 'string') return body.error; return `Simulation request failed (${status})`; }
 function schedulePreviewErrorMessage(status: number, body: unknown): string { if (status === 404) return 'The selected block or schedule no longer exists. Refresh the dashboard.'; if (status === 422) return 'The schedule cannot be previewed with the current site clock. Fix the rule or refresh the dashboard.'; if (isObject(body) && typeof body.error === 'string') return body.error; return `Schedule preview request failed (${status})`; }
 export async function simulateScenario(scenario: SimulationScenario, fetchImpl: FetchLike = fetch): Promise<DisplaySimulation> {
   if (scenario.trigger.type === 'schedule') {
@@ -772,17 +772,124 @@ function decodeSchedulePreview(input: unknown): DisplaySchedulePreview {
   const occurrences = array(required(field(root, 'simulation', 'occurrences'), 'occurrences'), 'occurrences').map((item, index) => scheduleOccurrence(item, `occurrences[${index}]`));
   return { blockId: stringValue(required(field(root, 'simulation', 'block_id', 'blockId'), 'block_id'), 'block_id'), schedule: stringValue(required(field(root, 'simulation', 'schedule', 'name'), 'schedule'), 'schedule'), kind: rule.kind, ruleSummary: rule.summary, occurrences };
 }
-export async function loadSnapshot(fetchImpl: FetchLike = fetch): Promise<DisplaySnapshot> { const response = await fetchImpl('/api/snapshot', { headers: { accept: 'application/json' } }); if (!response.ok) throw new Error(`Snapshot request failed (${response.status})`); return decodeSnapshot(await response.json()); }
-export interface DashboardClientHandlers { onSnapshot: (snapshot: DisplaySnapshot) => void; onEvent: (event: DashboardEvent) => void; onStreamOpen: () => void; onStreamLost: (error?: string) => void; onError: (error: Error) => void; }
-export interface DashboardClientOptions { handlers: DashboardClientHandlers; fetchImpl?: FetchLike; eventSource?: EventSourceConstructor; reconnectDelayMs?: number; }
-export class DashboardClient {
-  private readonly fetchImpl: FetchLike; private readonly EventSourceImpl: EventSourceConstructor; private readonly handlers: DashboardClientHandlers; private readonly reconnectDelayMs: number; private source: EventSourceLike | null = null; private reconnectTimer: ReturnType<typeof setTimeout> | null = null; private revision = 0; private running = false; private reconnecting = false; private snapshotLoaded = false; private needsSnapshot = true;
-  constructor(options: DashboardClientOptions) { this.fetchImpl = options.fetchImpl ?? fetch; this.EventSourceImpl = options.eventSource ?? (globalThis.EventSource as unknown as EventSourceConstructor); this.handlers = options.handlers; this.reconnectDelayMs = options.reconnectDelayMs ?? 1_000; }
-  async start(): Promise<void> { this.running = true; try { const snapshot = await loadSnapshot(this.fetchImpl); this.revision = snapshot.revision; this.snapshotLoaded = true; this.needsSnapshot = false; this.handlers.onSnapshot(snapshot); this.connect(); } catch (error) { this.handleError(error); this.scheduleReconnect(); } }
-  stop(): void { this.running = false; if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer); this.reconnectTimer = null; this.source?.close(); this.source = null; }
-  private connect(): void { if (!this.running || !this.EventSourceImpl) return; this.source?.close(); this.reconnecting = false; const source = new this.EventSourceImpl(`/api/events?since=${encodeURIComponent(this.revision)}`); this.source = source; source.onopen = () => this.handlers.onStreamOpen(); source.onerror = () => { if (this.source !== source) return; source.close(); this.source = null; this.handlers.onStreamLost('The browser event stream disconnected.'); this.scheduleReconnect(); }; source.addEventListener('update', (event) => this.handleEvent('update', event)); source.addEventListener('resync', (event) => this.handleEvent('resync', event)); }
-  private handleEvent(name: string, event: MessageEvent<string>): void { try { const decoded = decodeEvent(event.data, name, event.lastEventId); if (decoded.kind === 'resync') { this.source?.close(); this.source = null; this.needsSnapshot = true; void this.refreshSnapshot(); return; } if (decoded.revision <= this.revision) return; if (decoded.revision !== this.revision + 1) { this.needsSnapshot = true; this.handlers.onStreamLost('The browser event stream skipped a revision.'); this.source?.close(); this.source = null; void this.refreshSnapshot(); return; } this.revision = decoded.revision; this.handlers.onEvent(decoded); } catch (error) { this.handleError(error); this.source?.close(); this.source = null; this.handlers.onStreamLost('The browser event stream sent malformed data.'); this.scheduleReconnect(); } }
-  private async refreshSnapshot(): Promise<void> { if (!this.running || this.reconnecting) return; this.reconnecting = true; try { const snapshot = await loadSnapshot(this.fetchImpl); this.revision = snapshot.revision; this.snapshotLoaded = true; this.needsSnapshot = false; this.handlers.onSnapshot(snapshot); this.source?.close(); this.source = null; this.connect(); } catch (error) { this.handleError(error); this.scheduleReconnect(); } finally { this.reconnecting = false; } }
-  private scheduleReconnect(): void { if (!this.running || this.reconnectTimer !== null) return; this.reconnectTimer = setTimeout(() => { this.reconnectTimer = null; if (this.needsSnapshot || !this.snapshotLoaded) void this.refreshSnapshot(); else this.connect(); }, this.reconnectDelayMs); }
-  private handleError(error: unknown): void { this.handlers.onError(error instanceof Error ? error : new Error(String(error))); }
+function strictRevision(value: unknown, path: string): string {
+  if (typeof value !== 'string' || !/^(0|[1-9]\d*)$/.test(value)) throw new ApiDecodeError(path, 'expected a non-negative decimal revision string');
+  return value;
 }
+function revisionCompareForDecode(left: RevisionToken, right: RevisionToken): number { const a = BigInt(String(left)); const b = BigInt(String(right)); return a < b ? -1 : a > b ? 1 : 0; }
+function booleanDefault(source: JsonObject, path: string, names: string[], fallback: boolean): boolean {
+  const raw = field(source, path, ...names);
+  if (raw === undefined || raw === null) return fallback;
+  if (typeof raw !== 'boolean') throw new ApiDecodeError(`${path}.${names[0]}`, 'expected a boolean');
+  return raw;
+}
+function decodeCapabilities(value: unknown, host: DisplayHostKind, path: string): DisplayCapabilities {
+  const source = value === undefined || value === null ? {} : object(value, path);
+  const defaults = host === 'embedded' ? { schedules: false, externalInputs: false, httpInputs: false, webhookInputs: false } : { schedules: true, externalInputs: true, httpInputs: true, webhookInputs: true };
+  const read = (names: string[], fallback: boolean): boolean => {
+    const raw = field(source, path, ...names);
+    return raw === undefined || raw === null ? fallback : (typeof raw === 'boolean' ? raw : (() => { throw new ApiDecodeError(`${path}.${names[0]}`, 'expected a boolean'); })());
+  };
+  const capabilities: DisplayCapabilities = {
+    schedules: read(['schedules', 'schedule'], defaults.schedules),
+    externalInputs: read(['external_inputs', 'externalInputs'], defaults.externalInputs),
+    httpInputs: read(['http_inputs', 'httpInputs', 'http_polls', 'httpPolls'], defaults.httpInputs),
+    webhookInputs: read(['webhook_inputs', 'webhookInputs', 'webhooks'], defaults.webhookInputs)
+  };
+  for (const [name, item] of Object.entries(source)) if (!(name in capabilities)) {
+    if (typeof item !== 'boolean') throw new ApiDecodeError(`${path}.${name}`, 'expected a boolean capability');
+    capabilities[name] = item;
+  }
+  return capabilities;
+}
+export function decodeMeta(input: unknown): DisplayHostMeta {
+  const root = object(input, 'meta');
+  const source = isObject(field(root, 'meta', 'meta')) ? object(field(root, 'meta', 'meta'), 'meta') : root;
+  const hostRaw = field(source, 'meta', 'host_kind', 'hostKind', 'host', 'kind');
+  const host = hostRaw === undefined || hostRaw === null ? 'unknown' : stringValue(hostRaw, 'meta.host');
+  if (host !== 'desktop' && host !== 'embedded' && host !== 'unknown') throw new ApiDecodeError('meta.host', `unsupported host ${host}`);
+  const revisions = isObject(field(source, 'meta', 'revisions')) ? object(field(source, 'meta', 'revisions'), 'meta.revisions') : source;
+  const revisionRaw = field(revisions, 'meta.revisions', 'revision', 'cursor', 'current_revision', 'currentRevision') ?? field(source, 'meta', 'revision', 'cursor', 'current_revision', 'currentRevision');
+  const revision = strictRevision(required(revisionRaw, 'meta.revision'), 'meta.revision');
+  const programmingMode = booleanDefault(source, 'meta', ['programming_mode', 'programmingMode', 'maintenance_mode', 'maintenanceMode'], false);
+  const lockRaw = field(source, 'meta', 'mutation_locked', 'mutationLocked', 'locked');
+  const mutationLocked = lockRaw === undefined || lockRaw === null ? host === 'embedded' && !programmingMode : typeof lockRaw === 'boolean' ? lockRaw : (() => { throw new ApiDecodeError('meta.mutation_locked', 'expected a boolean'); })();
+  const runtimeRaw = field(source, 'meta', 'runtime');
+  const storageRaw = field(source, 'meta', 'storage');
+  const runtime = isObject(runtimeRaw) ? runtimeRaw : {};
+  const storage = isObject(storageRaw) ? storageRaw : {};
+  const status = (record: JsonObject, path: string, names: string[], fallback: string): string => {
+    const raw = field(record, path, ...names);
+    return raw === undefined || raw === null ? fallback : stringValue(raw, `${path}.${names[0]}`);
+  };
+  const reason = (record: JsonObject, path: string): string | null => optionalString(field(record, path, 'reason', 'cause', 'error'), `${path}.reason`);
+  const overloadRaw = field(source, 'meta', 'overloaded', 'overload') ?? field(runtime, 'meta.runtime', 'overloaded', 'overload');
+  const overload = overloadRaw === undefined || overloadRaw === null ? status(runtime, 'meta.runtime', ['status'], '') === 'overloaded' : typeof overloadRaw === 'boolean' ? overloadRaw : false;
+  if (overloadRaw !== undefined && overloadRaw !== null && typeof overloadRaw !== 'boolean' && typeof overloadRaw !== 'string') throw new ApiDecodeError('meta.overloaded', 'expected a boolean or status string');
+  return {
+    host: host as DisplayHostKind,
+    revision,
+    capabilities: decodeCapabilities(field(source, 'meta', 'capabilities', 'features'), host as DisplayHostKind, 'meta.capabilities'),
+    programmingMode,
+    mutationLocked,
+    runtimeStatus: status(runtime, 'meta.runtime', ['status', 'state'], 'ready'),
+    runtimeReason: reason(runtime, 'meta.runtime'),
+    storageStatus: status(storage, 'meta.storage', ['status', 'state'], 'ready'),
+    storageReason: reason(storage, 'meta.storage'),
+    overload: typeof overloadRaw === 'string' ? overloadRaw === 'overloaded' : overload
+  };
+}
+function changeIds(value: unknown, path: string): string[] {
+  if (value === undefined || value === null) return [];
+  return array(value, path).map((item, index) => typeof item === 'string' ? item : isObject(item) ? stringValue(required(field(item, `${path}[${index}]`, 'id', 'block_id', 'blockId', 'name'), `${path}[${index}].id`), `${path}[${index}].id`) : (() => { throw new ApiDecodeError(`${path}[${index}]`, 'expected a block id'); })());
+}
+export function decodeChanges(input: unknown): DisplayChanges {
+  const root = object(input, 'changes');
+  const source = isObject(field(root, 'changes', 'changes')) ? object(field(root, 'changes', 'changes'), 'changes') : root;
+  const revision = strictRevision(required(field(source, 'changes', 'revision', 'cursor', 'current_revision', 'currentRevision'), 'changes.revision'), 'changes.revision');
+  const changed = isObject(field(source, 'changes', 'changed')) ? object(field(source, 'changes', 'changed'), 'changes.changed') : {};
+  const changedBlocks = changeIds(field(source, 'changes', 'changed_blocks', 'changedBlocks', 'blocks') ?? field(changed, 'changes.changed', 'blocks', 'block_ids', 'blockIds'), 'changes.changed_blocks');
+  const executions = changeIds(field(source, 'changes', 'execution_blocks', 'executionBlocks', 'executions') ?? field(changed, 'changes.changed', 'executions'), 'changes.execution_blocks');
+  const bool = (names: string[], nested: string[]): boolean => {
+    const raw = field(source, 'changes', ...names) ?? field(changed, 'changes.changed', ...nested);
+    return raw === undefined || raw === null ? false : typeof raw === 'boolean' ? raw : (() => { throw new ApiDecodeError(`changes.${names[0]}`, 'expected a boolean'); })();
+  };
+  const cursorsRaw = field(source, 'changes', 'cursors', 'page_cursors', 'pageCursors');
+  const cursors: Record<string, string> = {};
+  if (cursorsRaw !== undefined && cursorsRaw !== null) for (const [name, value] of Object.entries(object(cursorsRaw, 'changes.cursors'))) cursors[name] = strictRevision(value, `changes.cursors.${name}`);
+  const snapshotRaw = field(source, 'changes', 'snapshot');
+  if (snapshotRaw !== undefined && snapshotRaw !== null) {
+    const snapshotObject = object(snapshotRaw, 'changes.snapshot');
+    strictRevision(required(field(snapshotObject, 'changes.snapshot', 'revision'), 'changes.snapshot.revision'), 'changes.snapshot.revision');
+  }
+  const changedSnapshot = snapshotRaw === undefined || snapshotRaw === null ? undefined : decodeSnapshot(snapshotRaw);
+  if (changedSnapshot && revisionCompareForDecode(changedSnapshot.revision, revision) !== 0) throw new ApiDecodeError('changes.snapshot.revision', 'does not match changes.revision');
+  return { revision, changedBlocks: [...new Set([...changedBlocks, ...executions])], executions, telegramsChanged: bool(['telegrams_changed', 'telegramsChanged', 'telegrams'], ['telegrams', 'telegram']), logsChanged: bool(['logs_changed', 'logsChanged', 'logs'], ['logs', 'log']), cursors, ...(changedSnapshot ? { snapshot: changedSnapshot } : {}) };
+}
+export function decodeBlockProjection(input: unknown, blockId?: string): DisplayBlock {
+  const root = object(input, 'block');
+  const source = isObject(field(root, 'block', 'block')) ? object(field(root, 'block', 'block'), 'block') : isObject(field(root, 'block', 'snapshot')) ? object(field(root, 'block', 'snapshot'), 'block') : root;
+  const id = blockId ?? (typeof field(source, 'block', 'id', 'block_id', 'blockId') === 'string' ? String(field(source, 'block', 'id', 'block_id', 'blockId')) : undefined);
+  if (!id) throw new ApiDecodeError('block.id', 'required field is missing');
+  const normalized: JsonObject = { ...source, id, source: field(source, 'block', 'source', 'logic') ?? 'return nil', inputs: field(source, 'block', 'inputs') ?? [], outputs: field(source, 'block', 'outputs') ?? [], executions: field(source, 'block', 'executions') ?? [], pending_timers: field(source, 'block', 'pending_timers', 'pendingTimers') ?? [], state: field(source, 'block', 'state', 'transient_state', 'transientState') ?? {}, schedules: field(source, 'block', 'schedules') ?? [] };
+  return decodeDisplayBlock(normalized, 0);
+}
+function transportError(label: string, status: number): Error {
+  if (status === 503) return new Error(`${label} request failed (503): embedded management service is busy; retrying while automation continues.`);
+  if (status === 423) return new Error(`${label} request failed (423): programming mode is required for this operation.`);
+  return new Error(`${label} request failed (${status})`);
+}
+export async function loadSnapshot(fetchImpl: FetchLike = fetch): Promise<DisplaySnapshot> { const response = await fetchImpl('/api/snapshot', { headers: { accept: 'application/json' } }); if (!response.ok) throw transportError('Snapshot', response.status); return decodeSnapshot(await response.json()); }
+export async function loadMeta(fetchImpl: FetchLike = fetch): Promise<DisplayHostMeta> { const response = await fetchImpl('/api/meta', { headers: { accept: 'application/json' } }); if (!response.ok) throw transportError('Metadata', response.status); return decodeMeta(await response.json()); }
+export async function loadChanges(since: RevisionToken, fetchImpl: FetchLike = fetch): Promise<{ changes: DisplayChanges | null; response: Response }> {
+  const response = await fetchImpl(`/api/changes?since=${encodeURIComponent(encodeRevisionToken(since))}`, { headers: { accept: 'application/json' } });
+  if (response.status === 204) return { changes: null, response };
+  if (!response.ok) throw transportError('Changes', response.status);
+  return { changes: decodeChanges(await response.json()), response };
+}
+export async function loadBlockProjection(blockId: string, fetchImpl: FetchLike = fetch): Promise<DisplayBlock> { const response = await fetchImpl(`/api/blocks/${encodeURIComponent(blockId)}`, { headers: { accept: 'application/json' } }); if (!response.ok) throw transportError('Block', response.status); return decodeBlockProjection(await response.json(), blockId); }
+export async function loadBlockProjections(fetchImpl: FetchLike = fetch): Promise<{ revision: RevisionToken; blocks: DisplayBlock[] }> { const response = await fetchImpl('/api/blocks', { headers: { accept: 'application/json' } }); if (!response.ok) throw transportError('Blocks', response.status); const root = object(await response.json(), 'blocks'); const revision = strictRevision(required(field(root, 'blocks', 'revision', 'cursor'), 'blocks.revision'), 'blocks.revision'); const raw = array(required(field(root, 'blocks', 'blocks', 'items'), 'blocks.blocks'), 'blocks.blocks'); return { revision, blocks: raw.map((item) => decodeBlockProjection(item)) }; }
+export async function loadTelegramPage(fetchImpl: FetchLike = fetch, cursor?: string): Promise<DisplayTelegram[]> { const response = await fetchImpl(`/api/telegrams${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { headers: { accept: 'application/json' } }); if (!response.ok) throw transportError('Telegram', response.status); const root = object(await response.json(), 'telegrams'); return array(field(root, 'telegrams', 'telegrams', 'items') ?? [], 'telegrams').map(telegram); }
+export async function loadLogPage(fetchImpl: FetchLike = fetch, cursor?: string): Promise<DisplayLog[]> { const response = await fetchImpl(`/api/logs${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { headers: { accept: 'application/json' } }); if (!response.ok) throw transportError('Log', response.status); const root = object(await response.json(), 'logs'); return array(field(root, 'logs', 'logs', 'items') ?? [], 'logs').map(log); }
+export { DashboardClient } from './dashboard-client';
+export type { DashboardClientHandlers, DashboardClientOptions } from './dashboard-client';

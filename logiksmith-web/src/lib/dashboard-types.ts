@@ -6,6 +6,40 @@ export type StreamStatus = 'connecting' | 'connected' | 'stale' | 'error';
 export type WriteStatus = 'idle' | 'pending' | 'succeeded' | 'failed';
 export type DisplayEndpointBindingKind = 'knx' | 'signal' | 'http' | 'webhook' | 'unbound';
 
+/** Host metadata is intentionally small so an embedded device need not send a dashboard snapshot. */
+export type DisplayHostKind = 'desktop' | 'embedded' | 'unknown';
+export interface DisplayCapabilities {
+  schedules: boolean;
+  externalInputs: boolean;
+  httpInputs: boolean;
+  webhookInputs: boolean;
+  [name: string]: boolean;
+}
+export interface DisplayHostMeta {
+  host: DisplayHostKind;
+  revision: RevisionToken;
+  capabilities: DisplayCapabilities;
+  programmingMode: boolean;
+  mutationLocked: boolean;
+  runtimeStatus: string;
+  runtimeReason: string | null;
+  storageStatus: string;
+  storageReason: string | null;
+  overload: boolean;
+}
+
+export interface DisplayChanges {
+  revision: RevisionToken;
+  changedBlocks: string[];
+  executions: string[];
+  telegramsChanged: boolean;
+  logsChanged: boolean;
+  /** Optional cursors supplied by bounded page projections. */
+  cursors: Record<string, string>;
+  /** Desktop compatibility only; embedded hosts should return cursors instead. */
+  snapshot?: DisplaySnapshot;
+}
+
 export interface DisplayEndpoint { name?: string; address: string; dpt: string; direction?: 'input' | 'output'; bindingKind?: DisplayEndpointBindingKind; signal?: string | null; /** External source name for HTTP/webhook bindings. */ source?: string | null; observed?: boolean | number | null; requested?: boolean | number | null; }
 export interface DisplayBinding { endpoint: string; groupAddress?: string; kind?: DisplayEndpointBindingKind; signal?: string; source?: string; poll?: string; value?: string; }
 export interface DisplaySignalBinding { endpoint: string; signal: string; dpt?: string; }
@@ -342,13 +376,13 @@ export interface DisplayOperations {
 }
 
 export interface DisplaySnapshot {
-  revision: number;
+  revision: RevisionToken;
   connection: { state: ConnectionState };
   config: { input: DisplayEndpoint; output: DisplayEndpoint; offDelayMs: number };
   values: { input: { observed: boolean | number | null }; output: { observed: boolean | number | null; requested: boolean | number | null } };
   automation?: DisplayAutomation;
-  activeAutomationRevision?: number | null;
-  savedAutomationRevision?: number | null;
+  activeAutomationRevision?: RevisionToken | null;
+  savedAutomationRevision?: RevisionToken | null;
   activeStructuralRevision: RevisionToken | null;
   savedStructuralRevision: RevisionToken | null;
   activeLogicRevision: RevisionToken | null;
@@ -373,10 +407,11 @@ export interface DisplaySnapshot {
   logs: DisplayLog[];
   blocks: DisplayBlock[];
   operations?: DisplayOperations;
+  meta?: DisplayHostMeta;
 }
 
-export interface DashboardState { snapshot: DisplaySnapshot | null; revision: number; streamStatus: StreamStatus; stale: boolean; staleAtMs: number | null; error: string | null; needsResync: boolean; nowMs: number; selectedBlockId: string | null; selectedExecutionId: number | null; selectionPinned: boolean; selectionNotice: string | null; }
-export type DashboardEvent = { kind: 'update'; revision: number; snapshot: DisplaySnapshot } | { kind: 'resync'; revision: number };
+export interface DashboardState { snapshot: DisplaySnapshot | null; revision: RevisionToken; streamStatus: StreamStatus; stale: boolean; staleAtMs: number | null; error: string | null; needsResync: boolean; nowMs: number; selectedBlockId: string | null; selectedExecutionId: number | null; selectionPinned: boolean; selectionNotice: string | null; }
+export type DashboardEvent = { kind: 'update'; revision: RevisionToken; snapshot: DisplaySnapshot; source?: 'poll' | 'stream' } | { kind: 'resync'; revision: RevisionToken };
 export type DashboardAction =
   | { type: 'snapshot_loaded'; snapshot: DisplaySnapshot; nowMs?: number }
   | { type: 'stream_open' }
