@@ -4,7 +4,7 @@ import { ApiDecodeError, decodeEvent, decodeSnapshot, loadBlockProjection, loadB
 import { encodeRevisionToken } from './revision';
 
 type FetchLike = typeof fetch;
-type EventSourceLike = { onopen: (() => void) | null; onerror: (() => void) | null; addEventListener(type: string, listener: (event: MessageEvent<string>) => void): void; close(): void; };
+type EventSourceLike = { onopen: ((event: Event) => void) | null; onerror: ((event: Event) => void) | null; addEventListener(type: string, listener: (event: MessageEvent<string>) => void): void; close(): void; };
 type EventSourceConstructor = new (url: string) => EventSourceLike;
 
 export interface DashboardClientHandlers { onSnapshot: (snapshot: DisplaySnapshot) => void; onEvent: (event: DashboardEvent) => void; onStreamOpen: () => void; onStreamLost: (error?: string) => void; onError: (error: Error) => void; onMeta?: (meta: DisplayHostMeta) => void; }
@@ -54,7 +54,7 @@ export class DashboardClient {
   private meta: DisplayHostMeta | null = null;
   private selectedBlockId: string | null = null;
   private readonly visibilityListener = (): void => { if (!this.running || this.polling || this.EventSourceImpl) return; if (this.pollTimer !== null) this.clearTimeoutImpl(this.pollTimer); this.pollTimer = null; this.schedulePoll(); };
-  constructor(options: DashboardClientOptions) { this.fetchImpl = options.fetchImpl ?? fetch; this.EventSourceImpl = options.eventSource; this.handlers = options.handlers; this.reconnectDelayMs = options.reconnectDelayMs ?? 1_000; this.visiblePollMs = options.visiblePollMs ?? 1_000; this.hiddenPollMs = options.hiddenPollMs ?? 5_000; this.maxBackoffMs = options.maxBackoffMs ?? 30_000; this.visibility = options.visibility ?? (() => typeof document === 'undefined' || document.visibilityState === 'visible'); this.setTimeoutImpl = options.setTimeoutImpl ?? setTimeout; this.clearTimeoutImpl = options.clearTimeoutImpl ?? clearTimeout; }
+  constructor(options: DashboardClientOptions) { this.fetchImpl = options.fetchImpl ?? fetch; this.EventSourceImpl = options.eventSource; this.handlers = options.handlers; this.reconnectDelayMs = options.reconnectDelayMs ?? 1_000; this.visiblePollMs = options.visiblePollMs ?? 1_000; this.hiddenPollMs = options.hiddenPollMs ?? 5_000; this.maxBackoffMs = options.maxBackoffMs ?? 30_000; this.visibility = options.visibility ?? (() => typeof document === 'undefined' || document.visibilityState === 'visible'); this.setTimeoutImpl = options.setTimeoutImpl ?? globalThis.setTimeout.bind(globalThis); this.clearTimeoutImpl = options.clearTimeoutImpl ?? globalThis.clearTimeout.bind(globalThis); }
   async start(): Promise<void> {
     this.running = true;
     if (!this.EventSourceImpl && typeof document !== 'undefined') document.addEventListener('visibilitychange', this.visibilityListener);

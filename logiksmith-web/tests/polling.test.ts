@@ -25,9 +25,27 @@ function handlers() {
   return { onSnapshot: vi.fn(), onEvent: vi.fn(), onStreamOpen: vi.fn(), onStreamLost: vi.fn(), onError: vi.fn() };
 }
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('embedded metadata and revision polling', () => {
+  it('binds default browser timers to the global receiver', async () => {
+    const h = handlers();
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url === '/api/meta') return response({ host_kind: 'desktop', revision: '1', capabilities: {}, programming_mode: true, runtime: { status: 'ready' }, storage: { status: 'ready' } });
+      if (url === '/api/snapshot') return response(snapshot(1));
+      throw new Error(`unexpected ${url}`);
+    };
+    vi.stubGlobal('setTimeout', function (this: unknown, callback: TimerHandler, delay?: number) {
+      expect(this).toBe(globalThis);
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    });
+    const client = new DashboardClient({ fetchImpl, handlers: h });
+    await client.start();
+    expect(h.onError).not.toHaveBeenCalled();
+    client.stop();
+  });
+
   it('decodes embedded capabilities and mutation lock state', () => {
     expect(decodeMeta(meta())).toMatchObject({ host: 'embedded', revision: '1', programmingMode: false, mutationLocked: true, capabilities: { schedules: false, externalInputs: false } });
     expect(() => decodeMeta({ ...meta(), revision: 1 })).toThrow(/meta\.revision/);

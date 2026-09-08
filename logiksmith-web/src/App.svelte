@@ -36,7 +36,7 @@
   }
 
   onMount(() => {
-    const client = new DashboardClient({ handlers: {
+    const client = new DashboardClient({ eventSource: EventSource, handlers: {
       onSnapshot: (next) => dispatch({ type: 'snapshot_loaded', snapshot: next, nowMs: Date.now() }),
       onEvent: (event) => dispatch({ type: 'event_received', event }),
       onStreamOpen: () => dispatch({ type: 'stream_open' }),
